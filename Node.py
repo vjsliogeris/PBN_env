@@ -2,7 +2,7 @@
 Represents nodes in a PBN.
 """
 import random
-import utils
+from .utils import *
 
 class Node():
     def __init__(self, mask, function, name = None):

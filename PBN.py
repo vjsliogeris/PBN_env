@@ -4,8 +4,8 @@ The environment that runs PBNs.
 import numpy as np
 import networkx as nx
 import copy
-import Node
-import utils
+from .Node import Node
+from .utils import *
 
 class PBN():
     def __init__(self, PBN_data):
