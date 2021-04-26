@@ -3,6 +3,7 @@ The environment that runs PBNs.
 """
 import numpy as np
 import networkx as nx
+import matplotlib.pyplot as plt
 import copy
 import time
 from .Node import Node
@@ -27,10 +28,12 @@ class PBN():
         self.state = None
         self.PBN_size = len(PBN_data)
         self.nodes = np.empty((self.PBN_size), dtype=object)
+        self.PBN = None
+        self.STG = None
 
         for i in range(self.PBN_size):
             mask, function = PBN_data[i]
-            self.nodes[i] = Node(mask, function)
+            self.nodes[i] = Node(mask, function, i)
 
     def unclip(self):
         """Un-clip each of the nodes
@@ -61,29 +64,8 @@ class PBN():
 
         returns: networkx di-graph.
         """
-        G = nx.DiGraph()
-        if type(self.nodes[0].name) == type(None):
-            for i in range(self.PBN_size):
-                G.add_node("G{0}".format(i+1))
-            for i in range(self.PBN_size):
-                #For each target node
-                node = self.nodes[i]
-                inps = []
-                mask = node.mask
-                weights = node.input_weights
-                if type(weights) == type(None):
-                    for inp in range(len(mask)):
-                        if mask[inp]:
-                            inps += [inp]
-                    for inp in inps:
-                        G.add_edge("G{0}".format(inp+1),"G{0}".format(i+1))
-                else:
-                    for inp in range(len(mask)):
-                        if mask[inp]:
-                            inps += [inp]
-                    for inp in inps:
-                        G.add_edge("G{0}".format(inp+1),"G{0}".format(i+1), weight = weights[inp])
-        else:
+        if type(self.PBN) == type(None):
+            G = nx.DiGraph()
             for i in range(self.PBN_size):
                 G.add_node(self.nodes[i].name)
             for i in range(self.PBN_size):
@@ -104,8 +86,19 @@ class PBN():
                             inps += [inp]
                     for inp in inps:
                         G.add_edge(self.nodes[inp].name,self.nodes[i].name, weight = weights[inp])
+            self.PBN = G
+        return self.PBN
 
-        return G
+    def plot_PBN(self, path):
+        #self.generate_weights()
+        G = self.print_PBN()
+        plt.figure(1, figsize = (20,20))
+        pos = nx.spring_layout(G)
+        weights = [G[u][v]['weight'] for u,v in G.edges()]
+        nx.draw(G, pos, node_size = 900, with_labels = True, width = weights)
+#        nx.draw(G, pos, node_size = 900, with_labels = True)
+        plt.savefig(path, dpi=160)
+        plt.clf()
 
     def flip(self, index):
         """Flip the value of a gene at index.
@@ -166,19 +159,55 @@ class PBN():
         returns:
             networkx DiGraph.
         """
+        if type(self.STG) == type(None):
+            N_states = 2**(self.PBN_size)
+            G = nx.DiGraph()
+            start = time.time()
+            for state_index in range(N_states):
+                state = booleanize(state_index, self.PBN_size)
+                G.add_node(str(state.astype(int)))
+                next_states = self._compute_next_states(state)
+                G.add_weighted_edges_from(next_states)
+                end = time.time()
+                est = N_states*(end-start)/(state_index+1)
+                print("\rComputing STG: {0}%. Est duration: {1}s, OR {2} mins, OR {3} hrs".format(state_index*100 / N_states, est, est/60, est/3600), end="")
+            self.STG = G
+        return self.STG
 
-        N_states = 2**(self.PBN_size)
-        G = nx.DiGraph()
-        start = time.time()
-        for state_index in range(N_states):
-            state = booleanize(state_index, self.PBN_size)
-            G.add_node(str(state.astype(int)))
-            next_states = self._compute_next_states(state)
-            G.add_weighted_edges_from(next_states)
-            end = time.time()
-            est = N_states*(end-start)/(state_index+1)
-            print("\rComputing STG: {0}%. Est duration: {1}s, OR {2} mins, OR {3} hrs".format(state_index*100 / N_states, est, est/60, est/3600), end="")
-        return G
+    def plot_STG(self, path):
+        STG = self.gen_STG()
+        plt.figure(1, figsize = (20,20))
+        pos = nx.spring_layout(STG)
+        weights = {(u,v):STG[u][v]['weight'] for u,v in STG.edges()}
+        #nx.draw(G, pos, node_size = 900, with_labels = True, width = weights)
+        nx.draw(STG, pos, node_size = 900, with_labels = True)
+        nx.draw_networkx_edge_labels(STG,pos,edge_labels = weights)
+        plt.savefig(path, dpi=160)
+        plt.clf()
+
+
+    def compute_attr(self):
+        if type(self.STG) == type(None):
+            self.STG = self.gen_STG()
+        STG = self.STG
+        generator = nx.algorithms.components.attracting_components(STG)
+        attractors = []
+        for att_set in generator:
+            att_list = []
+            for state_str in att_set:
+                att_list += [[int(s) for s in state_str[1:-1].split(" ")]]
+            attractors += [att_list]
+        return attractors
+
+
+    def generate_weights(self):
+        """Compute weights
+        """
+        for node_i in range(self.PBN_size):
+            node = self.nodes[node_i]
+            function = node.function
+            mask = node.mask
+            node.compute_input_weights()
 
     def apply_weights(self, weights):
         """Apply the weights provided (save them)
