@@ -4,6 +4,7 @@ The environment that runs PBNs.
 import numpy as np
 import networkx as nx
 import copy
+import time
 from .Node import Node
 from .utils import *
 
@@ -51,24 +52,59 @@ class PBN():
             self.state = state.astype(bool)
 
 
+    def name_nodes(self, names):
+        for i in range(self.PBN_size):
+            self.nodes[i].name = names[i]
+
     def print_PBN(self):
         """Construct a networkx graph representing the connetcivities of the PBN.
 
         returns: networkx di-graph.
         """
         G = nx.DiGraph()
-        for i in range(self.PBN_size):
-            G.add_node("G{0}".format(i+1))
-        for i in range(self.PBN_size):
-            node = self.nodes[i]
-            inps = []
-            mask = node.mask
+        if type(self.nodes[0].name) == type(None):
+            for i in range(self.PBN_size):
+                G.add_node("G{0}".format(i+1))
+            for i in range(self.PBN_size):
+                #For each target node
+                node = self.nodes[i]
+                inps = []
+                mask = node.mask
+                weights = node.input_weights
+                if type(weights) == type(None):
+                    for inp in range(len(mask)):
+                        if mask[inp]:
+                            inps += [inp]
+                    for inp in inps:
+                        G.add_edge("G{0}".format(inp+1),"G{0}".format(i+1))
+                else:
+                    for inp in range(len(mask)):
+                        if mask[inp]:
+                            inps += [inp]
+                    for inp in inps:
+                        G.add_edge("G{0}".format(inp+1),"G{0}".format(i+1), weight = weights[inp])
+        else:
+            for i in range(self.PBN_size):
+                G.add_node(self.nodes[i].name)
+            for i in range(self.PBN_size):
+                #For each target node
+                node = self.nodes[i]
+                inps = []
+                mask = node.mask
+                weights = node.input_weights
+                if type(weights) == type(None):
+                    for inp in range(len(mask)):
+                        if mask[inp]:
+                            inps += [inp]
+                    for inp in inps:
+                        G.add_edge(self.nodes[inp].name,self.nodes[i].name)
+                else:
+                    for inp in range(len(mask)):
+                        if mask[inp]:
+                            inps += [inp]
+                    for inp in inps:
+                        G.add_edge(self.nodes[inp].name,self.nodes[i].name, weight = weights[inp])
 
-            for inp in range(len(mask)):
-                if mask[inp]:
-                    inps += [inp]
-            for inp in inps:
-                G.add_edge("G{0}".format(inp+1),"G{0}".format(i+1))
         return G
 
     def flip(self, index):
@@ -130,14 +166,28 @@ class PBN():
         returns:
             networkx DiGraph.
         """
+
         N_states = 2**(self.PBN_size)
         G = nx.DiGraph()
+        start = time.time()
         for state_index in range(N_states):
             state = booleanize(state_index, self.PBN_size)
             G.add_node(str(state.astype(int)))
             next_states = self._compute_next_states(state)
             G.add_weighted_edges_from(next_states)
+            end = time.time()
+            est = N_states*(end-start)/(state_index+1)
+            print("\rComputing STG: {0}%. Est duration: {1}s, OR {2} mins, OR {3} hrs".format(state_index*100 / N_states, est, est/60, est/3600), end="")
         return G
+
+    def apply_weights(self, weights):
+        """Apply the weights provided (save them)
+        """
+        for i in range(self.PBN_size):
+            node_weights = np.around(weights[i,:], 4)
+            relevant_node = self.nodes[i]
+            relevant_node.input_weights = node_weights
+            self.nodes[i] = relevant_node
 
     def _compute_next_states(self, state):
         """Compute the probabilities of going to all next possible states from current state.

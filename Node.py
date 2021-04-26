@@ -22,6 +22,7 @@ class Node():
         self.name = name
         self.clipped = False
         self.clip_value = None
+        self.input_weights = None
 
     def step(self, state):
         """Return own next-state given the particular state according to own function and states of input genes.
