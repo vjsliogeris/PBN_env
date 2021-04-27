@@ -3,73 +3,57 @@ Represents nodes in a PBN.
 """
 import random
 from .utils import *
+import numpy as np
 
 class Node():
-    def __init__(self, mask, function, i, name = None):
+    def __init__(self, function, i, name = None):
         """represents node in a PBN.
 
-        attribute:
-            clipped (bool): Signified if gene is clipped.
-                A clipped gene stays constant.
-
         args:
-            mask [bool]: input mask. Signifies inputs
-            function [float]: vector representation of function
-            name (String): Name of the gene. Not actually used for now.
+            mask [Node]: List of node objects that are inputs of this node.
+            function [float]: matrix representation of function
+            name (String): Name of the gene
         """
-        self.mask = mask
+        self.input_nodes = None
         self.function = function
+        self.i = i
+
         if type(name) == type(None):
             self.name = "G{0}".format(i)
         else:
             self.name = name
-        self.clipped = False
-        self.clip_value = None
+
+        self.state = None
         self.input_weights = None
+        self.value = None
 
-    def step(self, state):
+    def compute_next_value(self):
         """Return own next-state given the particular state according to own function and states of input genes.
-
-        args:
-            state [int]: Current state of entire PBN
-
-        returns:
-            bool
-
+        Wowza this is data-type madness
         """
-        if self.clipped:
-            return self.clip_value
+        input_state = []
 
-        inputs = state[self.mask] #Get state of input genes
-        index = integerize(inputs) #Make state into index
-        prob_true = self.function[index] #Find probability of being True given the state
+        for i in range(len(self.input_nodes)):
+            input_node = self.input_nodes[i]
+            input_state += [int(input_node.value)]
+        input_state = tuple(input_state)
+
+        prob_true = self.function.item(input_state)
         u = random.uniform(0,1) #Sample
-        return prob_true > u
 
-    def get_probs(self, state):
-        """Return the probability of being True given state.
+        self.potential_value = u < prob_true
 
-        args:
-            state [int]: State
+    def apply_next_value(self):
 
-        returns:
-            float
+        if self.potential_value == type(None):
+            raise Exception('Finishing transaction without computing next value.')
+        self.value = self.potential_value
+        self.potential_value = None
 
-        """
-        if self.clipped:
-            #Very non-elegant.
-            if self.clip_value:
-                return 1
-            else:
-                return 0
 
-        inputs = state[self.mask]
-        index = integerize(inputs)
-        prob_true = self.function[index]
-        return prob_true
 
     def compute_input_weights(self):
-        """Compute the importance of each input after the fact.
+        """BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.BROKEN.
         """
         weights = np.zeros(np.sum(self.mask), dtype=float)
         N_states = 2**(np.sum(self.mask))
@@ -104,22 +88,7 @@ class Node():
                 i += 1
         self.input_weights = input_weights
 
-    def clip(self, clip_value):
-        """Clip current gene.
-        args:
-            clip_value (bool): value to be clipped at
-        """
-        if not self.clipped:
-            self.clipped = True
-            self.clip_value = clip_value
-        else:
-            print('Already Clipped!')
-
-    def unclip(self):
-        """Unclip current gene
-        """
-        if self.clipped:
-            self.clipped = False
-            self.clip_value = None
+    def __str__(self):
+        return self.name
 
 
