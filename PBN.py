@@ -10,13 +10,8 @@ from .Node import Node
 from .utils import *
 
 class PBN():
-    def __init__(self, PBN_data):
+    def __init__(self, PBN_data, resolved = False):
         """Construct a PBN from given PBN data.
-
-        Attributes:
-            state (bool]: curent state of the PBN.
-            PBN_size (int): Number of nodes in the PBN.
-            nodes [Node]: Node objects representing each of the variables.
 
         Args:
             PBN_data (list): data representing the PBN.
@@ -24,22 +19,19 @@ class PBN():
         returns:
             PBN
         """
-
-        self.state = None
+        
         self.PBN_size = len(PBN_data)
         self.nodes = np.empty((self.PBN_size), dtype=object)
-        self.PBN = None
-        self.STG = None
+        self.resolved = resolved
 
         for i in range(self.PBN_size):
-            mask, function = PBN_data[i]
-            self.nodes[i] = Node(mask, function, i)
+            _, function = PBN_data[i]
+            self.nodes[i] = Node(function, i)
 
-    def unclip(self):
-        """Un-clip each of the nodes
-        """
-        for node in self.nodes:
-            node.unclip()
+        for i in range(self.PBN_size):
+            mask, _ = PBN_data[i]
+            input_nodes = self.nodes[mask]
+            self.nodes[i].input_nodes = input_nodes
 
     def reset(self, state = None):
         """Set the state of the PBN to a particular one.
@@ -48,11 +40,13 @@ class PBN():
             state [bool]: The state to be set to. If left empty, defaults to a random state.
         """
         if type(state) == type(None):
-            self.state = np.random.rand(self.PBN_size) > 0.5
+            for node in self.nodes:
+                node.value = np.random.rand() > 0.5
         else:
             if state.shape[0] != self.PBN_size:
                 raise Exception('The length of the state given ({0}) is different from the PBN size ({1}).'.format(state.shape[0], self.PBN_size))
-            self.state = state.astype(bool)
+            for i in range(self.PBN_size):
+                self.nodes[i].value = state[i].astype(bool)
 
 
     def name_nodes(self, names):
@@ -114,41 +108,24 @@ class PBN():
         for i in range(self.PBN_size):
             print(self.nodes[i].function)
 
-    def clip(self, gene_i, value):
-        """Clip a gene to a particular value.
-
-        The clipping of a gene makes the gene ignore inputs, staying at a constant value.
-        Used to represent mutations.
-
-        args:
-            gene_i (int): gene index
-            value (bool): value to clip the gene to
-        """
-
-        if type(value) != type(True):
-            raise Exception('Keep it as a bool!.')
-
-        i = 0
-        for node in self.nodes:
-            if gene_i == i:
-                node.clip(value)
-                self.state[i] = value
-            i += 1
-
     def step(self):
         """Perform a step of natural evolution.
         """
-        old_state = self.state
 
-        if type(old_state) == type(None):
-            raise Exception('No state initialised. (Run reset())')
+        for node in self.nodes:
+            node.compute_next_value()
 
-        new_state = np.empty((self.PBN_size), dtype=bool)
+        for node in self.nodes:
+            node.apply_next_value()
 
+    def get_state(self):
+        """Get a state from the values of all the nodes
+        """
+        state = np.empty(self.PBN_size, dtype=bool)
         for i in range(self.PBN_size):
-            new_state[i] = self.nodes[i].step(old_state)
-
-        self.state = new_state
+            state[i] = self.nodes[i].value
+        return state
+        
 
     def gen_STG(self):
         """Generate the State Transition Graph (STG) of the PBN.
@@ -185,7 +162,91 @@ class PBN():
         plt.savefig(path, dpi=160)
         plt.clf()
 
+    def get_node_by_name(self, nodename):
+        """Get the appropriate node object given the name of the node.
+        """
+        for node in self.nodes:
+            if node.name == nodename:
+                return node
+        raise Exception(f'Node with name \'{nodename}\' not found.')
 
+    def get_output_nodes(self, node_obj):
+        """Get all the nodes that take node_obj as input.
+        May deal poorly if there are duplicate names.
+        NOTE: UNTESTED
+        """
+        output_nodes = []
+        for node in self.nodes:
+            inputs = [n.name for n in self.nodes[node.mask]]
+            if node_obj.name in inputs:
+                output_nodes += [node]
+        return output_nodes
+
+    def get_subPBN(self, nodes):
+        """Get the subgraph of the PBN which includes the given nodes.
+        """
+        PBN_data = []
+        for node in nodes:
+            node_object = self.get_node_by_name(node)
+            input_nodes = self.nodes[node_object.mask]
+            output_nodes = self.get_output_nodes(node_object)
+            print("Input nodes")
+            for a in input_nodes:
+                print(a)
+            print("Output nodes")
+            for a in output_nodes:
+                print(a)
+            print(node_object.mask)
+            print(node_object.function)
+            PBN_data += [(node_object.mask, node_object.function)]
+            for input_node in input_nodes:
+                PBN_data += [(input_node.mask, input_node.function)]
+        print(PBN_data)
+
+        raise Exception('')
+
+    def resolve(self):
+        if self.in_degree == 0:
+            #Resolve self here
+            pass
+        else:
+            if not self.all_parents.resolved(): #If not all paretns are resulved, resolve them
+                for parent_SG in parent_subgraphs:
+                    #If parents unresolved, resolve them.
+                    parent_SG.resolve()
+                #resolve self
+                
+
+    def compute_attractors(self):
+        """Compute attractors without explicitly computing STG.
+        """
+        PBN_graph = self.print_PBN()
+        group_gen = list(nx.strongly_connected_components(PBN_graph))
+        PBN_condensate = nx.algorithms.components.condensation(PBN_graph)
+        print(PBN_condensate.nodes())
+        print(PBN_condensate.edges())
+        print(group_gen)
+        root_subgraphs = []
+        for subgraph in PBN_condensate.nodes():
+            subgraph_nodes = group_gen[subgraph]
+            in_degree = PBN_condensate.in_degree(subgraph)
+            out_degree = PBN_condensate.out_degree(subgraph)
+            neighbours = list(PBN_condensate.neighbors(subgraph))
+            print(f"Clique: {subgraph_nodes}")
+            print(f"in degree: {in_degree}")
+            print(f"out degree: {out_degree}")
+            print(f"neighbours: {neighbours}")
+#            sub_PBN = self.get_subPBN(subgraph_nodes)
+#            sub_PBN.super_in_degree = in_degree
+            if in_degree == 0:
+                root_subgraphs += [sub_PBN]
+        for root_SG in root_subgraphs:
+            root_SG.resolve()
+
+
+        
+        raise Exception('')
+    '''
     def compute_attr(self):
         if type(self.STG) == type(None):
             self.STG = self.gen_STG()
@@ -198,8 +259,7 @@ class PBN():
                 att_list += [[int(s) for s in state_str[1:-1].split(" ")]]
             attractors += [att_list]
         return attractors
-
-
+    '''
     def generate_weights(self):
         """Compute weights
         """
