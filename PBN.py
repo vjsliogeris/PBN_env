@@ -10,7 +10,7 @@ from .Node import Node
 from .utils import *
 
 class PBN():
-    def __init__(self, PBN_data, resolved = False):
+    def __init__(self, PBN_data = None):
         """Construct a PBN from given PBN data.
 
         Args:
@@ -19,10 +19,10 @@ class PBN():
         returns:
             PBN
         """
-        
         self.PBN_size = len(PBN_data)
         self.nodes = np.empty((self.PBN_size), dtype=object)
-        self.resolved = resolved
+        self.PBN = None
+        self.STG = None
 
         for i in range(self.PBN_size):
             _, function = PBN_data[i]
@@ -64,22 +64,20 @@ class PBN():
                 G.add_node(self.nodes[i].name)
             for i in range(self.PBN_size):
                 #For each target node
-                node = self.nodes[i]
-                inps = []
-                mask = node.mask
+                node = self.nodes[i] #Current node object
+                input_nodes = self.nodes[i].input_nodes
+                inps = [] #List of names of input nodes
+
                 weights = node.input_weights
+                for inp in input_nodes:
+                    inps += [inp.name]
+
                 if type(weights) == type(None):
-                    for inp in range(len(mask)):
-                        if mask[inp]:
-                            inps += [inp]
                     for inp in inps:
-                        G.add_edge(self.nodes[inp].name,self.nodes[i].name)
+                        G.add_edge(inp,node.name)
                 else:
-                    for inp in range(len(mask)):
-                        if mask[inp]:
-                            inps += [inp]
                     for inp in inps:
-                        G.add_edge(self.nodes[inp].name,self.nodes[i].name, weight = weights[inp])
+                        G.add_edge(inp,node.name, weight = weights[inp])
             self.PBN = G
         return self.PBN
 
@@ -185,81 +183,88 @@ class PBN():
     def get_subPBN(self, nodes):
         """Get the subgraph of the PBN which includes the given nodes.
         """
-        PBN_data = []
+        sub_PBN = PBN()
+        PBN_nodes = []
         for node in nodes:
             node_object = self.get_node_by_name(node)
-            input_nodes = self.nodes[node_object.mask]
-            output_nodes = self.get_output_nodes(node_object)
-            print("Input nodes")
-            for a in input_nodes:
-                print(a)
-            print("Output nodes")
-            for a in output_nodes:
-                print(a)
-            print(node_object.mask)
-            print(node_object.function)
-            PBN_data += [(node_object.mask, node_object.function)]
-            for input_node in input_nodes:
-                PBN_data += [(input_node.mask, input_node.function)]
-        print(PBN_data)
+            PBN_nodes += [node_object]
 
-        raise Exception('')
+        sub_PBN.nodes = PBN_nodes
+        sub_PBN.resolved = False
+        sub_PBN.PBN_size = len(PBN_nodes)
+        return sub_PBN
 
-    def resolve(self):
-        if self.in_degree == 0:
-            #Resolve self here
-            pass
-        else:
-            if not self.all_parents.resolved(): #If not all paretns are resulved, resolve them
-                for parent_SG in parent_subgraphs:
-                    #If parents unresolved, resolve them.
-                    parent_SG.resolve()
-                #resolve self
-                
+    def all_parents_resolved(self):
+        """Go through all parents, check if they are resolved
+        """
+        all_resolved = True
+        for parent in self.parent_SG:
+            if not parent.resolved:
+                all_resolved = False
+        return all_resolved
 
-    def compute_attractors(self):
+
+    def compute_attractors(self, expand = False):
         """Compute attractors without explicitly computing STG.
         """
-        PBN_graph = self.print_PBN()
-        group_gen = list(nx.strongly_connected_components(PBN_graph))
-        PBN_condensate = nx.algorithms.components.condensation(PBN_graph)
-        print(PBN_condensate.nodes())
-        print(PBN_condensate.edges())
-        print(group_gen)
-        root_subgraphs = []
-        for subgraph in PBN_condensate.nodes():
-            subgraph_nodes = group_gen[subgraph]
-            in_degree = PBN_condensate.in_degree(subgraph)
-            out_degree = PBN_condensate.out_degree(subgraph)
-            neighbours = list(PBN_condensate.neighbors(subgraph))
-            print(f"Clique: {subgraph_nodes}")
-            print(f"in degree: {in_degree}")
-            print(f"out degree: {out_degree}")
-            print(f"neighbours: {neighbours}")
-#            sub_PBN = self.get_subPBN(subgraph_nodes)
-#            sub_PBN.super_in_degree = in_degree
-            if in_degree == 0:
-                root_subgraphs += [sub_PBN]
-        for root_SG in root_subgraphs:
-            root_SG.resolve()
+        template = '*'*self.PBN_size #Generate rule template.
+
+        all_symbolic_rules = []
+        for node in self.nodes:
+            symbolic_rules = node.generate_symbolic_rules(list(template))
+            all_symbolic_rules+= symbolic_rules
 
 
-        
-        raise Exception('')
-    '''
-    def compute_attr(self):
-        if type(self.STG) == type(None):
-            self.STG = self.gen_STG()
-        STG = self.STG
-        generator = nx.algorithms.components.attracting_components(STG)
-        attractors = []
-        for att_set in generator:
-            att_list = []
-            for state_str in att_set:
-                att_list += [[int(s) for s in state_str[1:-1].split(" ")]]
-            attractors += [att_list]
+#        print()
+#        print(ruleset_old)
+#        print()
+        '''
+        ruleset_old = []
+        ruleset_old += [('001', '100')]
+        ruleset_old += [('100', '010')]
+        ruleset_old += [('010', '001')]
+        all_symbolic_rules = ruleset_old
+        print(ruleset_old)
+        #'''
+
+        #print(all_symbolic_rules)
+        #raise Exception('')
+        print("===")
+        print("Total ruleset:")
+        print(all_symbolic_rules)
+        merged_ruleset = apply_until_exhaustion(all_symbolic_rules, lambda x: merge_symbolic_rules(x))
+        print("Merged ruleset:")
+        print(merged_ruleset)
+        simplified_ruleset = apply_until_exhaustion(merged_ruleset, lambda x: simplify_symbolic_rules(x))
+        print("SIMPlified ruleset:")
+        print(simplified_ruleset)
+        minimal_ruleset = apply_until_exhaustion(simplified_ruleset, lambda x: remove_redundant_rules(x))
+        print("Minimised ruleset")
+        print(minimal_ruleset)
+        for inp_1, out_1 in minimal_ruleset:
+            for inp_2, out_2 in minimal_ruleset:
+                if inp_1 == inp_2 and not out_1 == out_2:
+                    print("{0} -> {1}".format(inp_1, out_1))
+                    print("{0} -> {1}".format(inp_2, out_2))
+                    raise Exception('Duplicate')
+        concrete_ruleset = apply_until_exhaustion(minimal_ruleset, lambda x: concretise_symbolic_ruleset(x))
+        print("Concrete ruleset")
+        print(concrete_ruleset)
+        time_inv_ruleset = apply_until_exhaustion(concrete_ruleset, lambda x: connect_symbolic_ruleset(x))
+        print("Time inv ruleset")
+        print(time_inv_ruleset)
+
+        attractors = get_att_from_ruleset(concrete_ruleset, time_inv_ruleset)
+#        print(expand_att(['*0*']))
+#        raise Exception('')
+        if expand:
+            expanded_att = []
+            for att in attractors:
+                att = expand_att(att)
+                expanded_att += [att]
+            attractors = expanded_att
         return attractors
-    '''
+
     def generate_weights(self):
         """Compute weights
         """
