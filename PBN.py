@@ -67,17 +67,19 @@ class PBN():
                 node = self.nodes[i] #Current node object
                 input_nodes = self.nodes[i].input_nodes
                 inps = [] #List of names of input nodes
+                inps_i = [] #List of indexes of input nodes
 
                 weights = node.input_weights
                 for inp in input_nodes:
                     inps += [inp.name]
+                    inps_i += [inp.i]
 
                 if type(weights) == type(None):
-                    for inp in inps:
-                        G.add_edge(inp,node.name)
+                    for inp in input_nodes:
+                        G.add_edge(inp.name,node.name)
                 else:
-                    for inp in inps:
-                        G.add_edge(inp,node.name, weight = weights[inp])
+                    for inp in input_nodes:
+                        G.add_edge(inp.name,node.name, weight = weights[inp.i])
             self.PBN = G
         return self.PBN
 
@@ -136,6 +138,7 @@ class PBN():
         """
         if type(self.STG) == type(None):
             N_states = 2**(self.PBN_size)
+            print("Total number of states: {0}".format(N_states))
             G = nx.DiGraph()
             start = time.time()
             for state_index in range(N_states):
@@ -145,7 +148,7 @@ class PBN():
                 G.add_weighted_edges_from(next_states)
                 end = time.time()
                 est = N_states*(end-start)/(state_index+1)
-                print("\rComputing STG: {0}%. Est duration: {1}s, OR {2} mins, OR {3} hrs".format(state_index*100 / N_states, est, est/60, est/3600), end="")
+                print("\rComputing STG: At index {4} {0}%. Est duration: {1}s, OR {2} mins, OR {3} hrs".format(state_index*100 / N_states, est, est/60, est/3600, state_index), end="")
             self.STG = G
         return self.STG
 
@@ -218,14 +221,6 @@ class PBN():
 #        print()
 #        print(ruleset_old)
 #        print()
-        '''
-        ruleset_old = []
-        ruleset_old += [('001', '100')]
-        ruleset_old += [('100', '010')]
-        ruleset_old += [('010', '001')]
-        all_symbolic_rules = ruleset_old
-        print(ruleset_old)
-        #'''
 
         #print(all_symbolic_rules)
         #raise Exception('')
