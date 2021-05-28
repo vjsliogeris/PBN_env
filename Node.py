@@ -97,7 +97,7 @@ class Node():
             output_value = int(self.function.item(tuple(actual_input.astype(int))))
             apparent_index_output = self.i
             temp_template_out[apparent_index_output] = str(output_value)
-            r = [("".join(temp_template_inp),"".join(temp_template_out))]
+            r = [("".join(temp_template_inp),["".join(temp_template_out)])]
             rules += r
             #rules["".join(temp_template_inp)] = ["".join(temp_template_out)]
         return rules

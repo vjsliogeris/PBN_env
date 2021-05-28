@@ -2,6 +2,7 @@
 """
 import copy
 import numpy as np
+import itertools
 
 
 def integerize(X):
@@ -24,51 +25,10 @@ def booleanize(X, l):
             output[i] = 1
     return output
 
-def _check_subset(A, B):
-    """Check if A is a subset of B (All states in A belong in B)
-    """
-    is_subset = True
-    n_elements = len(A)
-    for i in range(n_elements):
-        a = A[i]
-        b = B[i]
-        if not b == '*' and not a == b:
-            is_subset = False
-    return is_subset
-
-def connect_symbolic_ruleset(ruleset):
-    """Connect rules
-    These rules, unlike the previous ones, mean that the input will eventually, yet invariably reach the target.
-    """
-    #print("connect_symbolic_ruleset")
-    #print(ruleset)
-    for inp_1, out_1 in ruleset:
-        for inp_2, out_2 in ruleset:
-#            if not (inp_1 == inp_2 and out_1 == out_2): #Check if not comparing to selfi
-            is_subset = _check_subset(out_1, inp_2)
-            if is_subset:
-                '''
-                print("{0} -> {1}".format(inp_1, out_1))
-                print("{0} -> {1}".format(inp_2, out_2))
-                print("{0} is subset of {1}".format(out_1, inp_2))
-                print("{0} -> {1}".format(inp_1, out_1))
-                print("+")
-                print("{0} -> {1}".format(inp_2, out_2))
-                print("=")
-                print("{0} -> {1}".format(inp_1, out_2))
-                print("-----------------")
-                #'''
-                if not (inp_1, out_2) in ruleset:
-                    ruleset += [(inp_1, out_2)]
-#                    new_rules[inp_1] = [out_2]
-                if not (out_1, out_2) in ruleset:
-                    ruleset += [(out_1, out_2)]
-    #print(ruleset)
-#    ruleset = _update_ruleset(ruleset, new_rules)
-    #raise Exception('')
-    return ruleset
-
 def apply_until_exhaustion(ruleset_linked, function):
+    """Repeat the manipulation until the ruleset doesn't change.
+    This means all the possible manipulations have been applied.
+    """
     ruleset = copy.deepcopy(ruleset_linked)
     can_generate_new = True
     ruleset_old = copy.deepcopy(ruleset)
@@ -81,156 +41,415 @@ def apply_until_exhaustion(ruleset_linked, function):
 
     return ruleset
 
-def concretise_symbolic_ruleset(ruleset):
-    #print("concretise_symbolic_ruleset")
-#    print(ruleset)
-    ruleset_new = copy.deepcopy(ruleset)
-    for inp_1, out_1 in ruleset:
-        n_ast_out = _count_asterisks(out_1) 
-        n_ast_inp = _count_asterisks(inp_1)
-        compatibility = _check_subset(out_1, inp_1)
-        if n_ast_out < n_ast_inp and compatibility: #Larger set goes into smaller
-#            print("{0} -> {1}".format(inp_1, out_1))
-            if not (out_1, out_1) in ruleset_new:
-                ruleset_new += [(out_1, out_1)]
-    return ruleset_new
 
-def remove_redundant_rules(ruleset):
-    #print("remove_reduntant_rules")
-#    print(ruleset)
-    new_ruleset = []
-    for inp_1, out_1 in ruleset:
-        mega_out = copy.deepcopy(out_1)
-        for inp_2, out_2 in ruleset:
-            if not (inp_1 == inp_2 and out_1 == out_2): #Check if not comparing to self
-                if inp_1 == inp_2 and not out_1 == out_2:
-#                    print("Same input, output mismatch")
-#                    print("{0} -> {1}".format(inp_1, out_1))
-#                    print("{0} -> {1}".format(inp_2, out_2))
-#                    print(ruleset)
-                    if _check_compatibility(out_1, out_2):
-                        mega_out = _merge(mega_out, out_2)
-                    else:
-                        raise Exception('Same input, incompatible outputs')
-#                            print(ruleset)
-#        print("{0} -> {1}".format(inp_1, mega_out))
-        if not (inp_1, mega_out) in new_ruleset:
-            new_ruleset += [(inp_1, mega_out)]
-#    print(new_ruleset)
-#    raise Exception('')
-    return new_ruleset
+def _union(list_1, list_2):
+    out = copy.deepcopy(list_1)
+    for state in list_2:
+        if not state in out:
+            out += [state]
+    return out
 
-def simplify_symbolic_rules(ruleset):
-    """Simplify pairs of rules
-    If two rules are complement, and they have the same output, they can be merged into one (generalized)
+def _list_intersection(list_1, list_2):
+    conjunctions = []
+    for state_1 in list_1:
+        for state_2 in list_2:
+            conjunctions += [_intersection(state_1, state_2)]
+    tidy = _tidy_states(conjunctions)
+    return tidy
+
+def _union_rules(ruleset):
+    fitting_rules = copy.deepcopy(ruleset)
+    used_rules = []
+    NU_rules = []
+    for inp_1, out_1 in fitting_rules:
+        for inp_2, out_2 in fitting_rules:
+            if not (inp_1 == inp_2 and out_1 == out_2):
+                NU_exists, NU = _nice_union(inp_1, inp_2)
+                if NU_exists:
+                    out = _union(out_1, out_2)
+                    out.sort()
+                    if not (inp_1, out_1) in used_rules:
+                        used_rules += [(inp_1, out_1)]
+                    if not (inp_2, out_2) in used_rules:
+                        used_rules += [(inp_2, out_2)]
+                    if not (NU, out) in NU_rules:
+                        NU_rules += [(NU, out)]
+                    #input()
+
+    for used_rule in used_rules:
+        fitting_rules.remove(used_rule)
+    fitting_rules += NU_rules
+    return fitting_rules
+
+def _specify_rules(ruleset):
+    fitting_rules = copy.deepcopy(ruleset)
+    specific_rules = []
+    used_rules = []
+    for inp_1, out_1 in fitting_rules:
+        working_output = copy.deepcopy(out_1)
+        working_input = copy.deepcopy(inp_1)
+        for inp_2, out_2 in fitting_rules:
+            if not (inp_1 == inp_2 and out_1 == out_2):
+                if _check_subset(inp_1, inp_2):#if rule_1 applies to state, rule 2 applies to state
+                    working_input = _intersection(working_input, inp_2)
+                    working_output = _list_intersection(out_2, working_output)
+                    if not (inp_1, out_1) in used_rules:
+                        used_rules += [(inp_1, out_1)]
+                    if not (inp_2, out_2) in used_rules:
+                        used_rules += [(inp_2, out_2)]
+
+        working_output.sort()
+        if not (working_input, working_output) in specific_rules:
+            specific_rules += [(working_input, working_output)]
+        #print("Finishing rule:")
+        #_print_rule(inp_1, out_1)
+        #print(working_output)
+        #input()
+    fitting_rules = specific_rules
+    return fitting_rules
+
+def shake_em_up(ruleset):
+    fitting_rules = copy.deepcopy(ruleset)
+    fitting_rules = _specify_rules(fitting_rules)
+    print("Intersectioned rules")
+    print(fitting_rules)
+    fitting_rules = _union_rules(fitting_rules)
+    print("Unioned_rules")
+    print(fitting_rules)
+    return fitting_rules
+
+def apply_ruleset(state, ruleset, debug = False):
+    """Apply the ruleset to the states
+
+    Returns the resulting states after applying the ruleset to the input states.
+    Recursive
+    WIP
     """
-    #print("simplify_symbolic_ruleset")
-    #If an input is not in the ruleset, we can say that the input leads to all other states.
-#    print("vvv")
-#    print(ruleset)
-    for inp_1, out_1 in ruleset:
-        for inp_2, out_2 in ruleset:
-            if not (inp_1 == inp_2 and out_1 == out_2): #Check if not comparing to self
-                diff_index, complements = _check_complement(inp_1, inp_2)
-                if complements and (out_1 == out_2):
-                    #print("Simplifiable")
-                    #print("{0} -> {1}".format(inp_1, out_1))
-                    #print("{0} -> {1}".format(inp_2, out_2))
-                    inp_merged = list(inp_1)
-                    inp_merged[diff_index] = '*'
-                    inp_merged = ''.join(inp_merged)
-                    if not (inp_merged, out_1) in ruleset:
-                        ruleset += [(inp_merged, out_1)]
-#    print(ruleset)
-#    print(new_rules)
-    #ruleset = _update_ruleset(ruleset, new_rules)
-    #ruleset += new_rules
-#    print(ruleset)
-    #input()
-    return ruleset
+    outputs = []
+    print("Applying ruleset to state {0}".format(state))
+    fitting_rules = []
+    for inp, out in ruleset:
+        intersection = _intersection(inp, state)
+        if not type(intersection) == type(None):
+#                _print_rule(inp, out)
+            fitting_rules += [(intersection, out)]
+    fitting_rules.sort(key = lambda x: _count_asterisks(x[0]), reverse = True)
+    print("Fitting rules")
+    print(fitting_rules)
+    fitting_rules = apply_until_exhaustion(fitting_rules, lambda x: shake_em_up(x))
+#    fitting_rules = _union_rules(fitting_rules)
+#    print("Unioned_rules")
+#    print(fitting_rules)
+#
+#    fitting_rules = _specify_rules(fitting_rules)
 
-def merge_symbolic_rules(ruleset):
-    """Merge rules that we can merge.
-    If inputs and outputs are compatible, then the new rule would be the intersection of both rules.
-    """
-#    print("merge_symbolic_rules")
-#    print(ruleset)
-    n_rules = len(ruleset)
-    n_oper = 0
-    ruleset_new = []
-    print("Ruleset size: {0}".format(n_rules))
-    print("Total computations to do: {0}".format(n_rules**2))
-    for inp_1, out_1 in ruleset:
-        for inp_2, out_2 in ruleset:
-            if not (inp_1 == inp_2 and out_1 == out_2): #Check if not comparing to self
-                n_rules = len(ruleset)
-                print("{0}".format(n_oper/(n_rules**2)), end="\r")
-                compatible = _check_compatibility(inp_1, inp_2)
-                if compatible:
-                    inp_merged = _merge(inp_1, inp_2)
-                    out_merged = _merge(out_1, out_2)
-                    '''
-                    print()
-                    print("{0} -> {1}".format(inp_1, out_1))
-                    print("+")
-                    print("{0} -> {1}".format(inp_2, out_2))
-                    print("=")
-                    print("{0} -> {1}".format(inp_merged, out_merged))
-                    print("^^^^^")
-                    input()
-                    '''
-                    if not (inp_merged, out_merged) in ruleset:
-                        ruleset += [(inp_merged, out_merged)]
-            n_oper += 1
-    #print("Total computaitons done: {0}".format(n_oper))
-    #ruleset = _update_ruleset(ruleset, full_ruleset)
-    #ruleset += full_ruleset
-    #print()
-#    print(ruleset)
-#    print(full_ruleset)
-    #input()
-    return ruleset
+#    print("Intersectioned rules")
+#    print(fitting_rules)
+    outputs = []
+    for inp, out in fitting_rules:
+        if not out in outputs:
+            outputs += out
+    unaccounted_states = copy.deepcopy(state)
+    for inp, out in fitting_rules:
+        unaccounted_states = _subtract_states(unaccounted_states, inp)
+    if len(unaccounted_states) > 0:
+        print("Got unaccounted-for states")
+        print(unaccounted_states)
+        print(ruleset)
+        unaccounted_state_outputs = apply_ruleset(unaccounted_states[0], ruleset)
+        print("Outputs are {0}".format(unaccounted_state_outputs))
+        raise Exception('Got unaccounted-for states')
+    outputs = _tidy_states(outputs)
+    outputs.sort(key = lambda x: _count_asterisks(x))
+    print("Reached {0}".format(outputs))
+    if debug:
+        input()
+    return outputs
 
-def _update_ruleset(ruleset, additions):
-#    print("_update_ruleset")
-    #print(ruleset)
-    #print(additions)
-    for inp_a, out_a in additions:
-        already_in = False
-        if not inp_a in ruleset.keys():
-            #This is a new input rule
-            ruleset[inp_a] = [out_a[0]]
-        else:
-            #This rule already exist. Get the one that is more accurate
-            out_r = ruleset[inp_a][0]
-            if not out_r == out_a:
-                #Outputs are different
-                n_ast_a = _count_asterisks(out_a)
-                n_ast_r = _count_asterisks(out_r)
-                if n_ast_r < n_ast_a:
-                    ruleset[inp_a] = [out_r[0]]
-                elif n_ast_r > n_ast_a:
-                    ruleset[inp_a] = [out_a[0]]
-                else:
-                    #print("Original: {0} -> {1}".format(inp_a, out_r))
-                    #print("Addition: {0} -> {1}".format(inp_a, out_a))
-                    #print(n_ast_r)
-                    #print(n_ast_a)
-                    out_merged = _merge(out_r, out_a)
-                    #print(out_merged)
-                    ruleset[inp_a] = [out_merged]
-#    print(ruleset)
+
+def find_successors(state, parents, ruleset, debug = False):
+#    print("_find_successors")
+#    print(f"on {state}")
+#    print(f" parents until now: {parents}")
+    next_states = apply_ruleset(state, ruleset, debug = debug)
+#    print(f" s_t+1{next_states}")
+    goes_to_parents = True
+    for n_s in next_states:
+        if not n_s in parents:
+            goes_to_parents = False
+#    print(goes_to_parents)
 #    input()
+    if goes_to_parents:
+        return state
+    else:
+        loopy_states = []
+        for n_s in next_states:
+            if not n_s in parents:
+                loopy_state = find_successors(n_s, parents + [state], ruleset)
+                if not type(loopy_state) == type(None):
+                    return loopy_state
+        raise Exception('Did not find loopy states??')
 
-    return ruleset
+def _tidy_states(states):
+    output = []
+    for state_1 in states:
+        redundant = False
+        for state_2 in states:
+            if not state_1 == state_2:
+                if _check_subset(state_1, state_2):
+                    redundant = True
+        if not redundant:
+            if not state_1 in output:
+                output += [state_1]
+    return output
 
-def _count_asterisks(notation):
-    n_elements = len(notation)
+def _subtract_states(A, B):
+    """ Return A/B
+
+    Find where there are non-asterisks.
+    Get all combinations of the non-asterisks possible.
+
+    """
+
+    B_relevant = _intersection(A,B)
+
+    n_elements = len(A)
+
+    important_positions = []
+
+    for i in range(n_elements):
+        s_A = A[i]
+        s_B = B[i]
+        if s_A == '*' and not s_B == '*':
+            important_positions += [(i, s_B)]
+    combinations = list(itertools.product(['0', '1'], repeat = len(important_positions)))
+    combinations = [''.join(x) for x in combinations]
+    present_combination = [''.join(x[1]) for x in important_positions]
+    present_combination = ''.join(present_combination)
+    combinations.remove(present_combination)
+    output = []
+    for combination in combinations:
+        c_expression = list(copy.deepcopy(A))
+        for position_index in range(len(important_positions)):
+            particular_position = important_positions[position_index]
+            c_expression[particular_position[0]] = combination[position_index]
+        c_expression = ''.join(c_expression)
+        output += [c_expression]
+    return output
+
+def _intersection(temp_1, temp_2):
+    """Return the intersection of two expressions
+    """
+    if type(temp_1) == type(None) or type(temp_2) == type(None):
+        #Intersection with an empty set is an empty set.
+        return None
+    n_symbols = len(temp_1)
+    merged_temp = ['*']*n_symbols
+    for i in range(n_symbols): #Compare element-wise.
+        s_1 = temp_1[i]
+        s_2 = temp_2[i]
+        if not s_1 == '*' and not s_2 == '*' and not s_1 == s_2:#If elements aren't asterisks but they mismatch
+            #Means that there can't be an intersection because the node at that position must be at different values.
+            return None
+        if not s_1 == "*":
+            merged_temp[i] = s_1
+        if not s_2 == "*":
+            merged_temp[i] = s_2
+    merged_temp = ''.join(merged_temp)
+    return merged_temp
+
+def check_subset(A,B):
+    return _check_subset(A,B)
+
+def _check_subset(A, B):
+    """Check if A is a subset of B (All states in A belong in B)
+    """
+    if type(A) == type(None): #The empty set is the subset of any set.
+        return True
+    if type(B) == type(None): #A non-empty set is not a subset of an empty set
+        return False
+
+    is_subset = True
+    n_elements = len(A)
+    for i in range(n_elements):
+        a = A[i]
+        b = B[i]
+        if not b == '*' and not a == b:
+            is_subset = False
+    return is_subset
+
+def flatten_ruleset(ruleset):
+    """Remove the sub-listings in the ruleset.
+    Sort it.
+    """
+    output = []
+    for rule in ruleset:
+        output += rule
+
+    output.sort(key = lambda x: _count_asterisks(x[0]), reverse = True)
+    return output
+
+def _count_asterisks(temp):
+    """Return the number of asterisks within the expression
+    """
+    n_elements = len(temp)
     n_asterisks = 0
     for i in range(n_elements):
-        if notation[i] == '*':
+        if temp[i] == '*':
             n_asterisks += 1
     return n_asterisks
+
+def get_nice_specific(ruleset):
+    """If two rules have the same input, merge outputs, since both of the rules must apply.
+    """
+    print("Generating specifics")
+    ruleset = copy.deepcopy(ruleset)
+    mergees = copy.deepcopy(ruleset[-1])
+    n_output_ruleset = len(ruleset) #Number of output nodes considered by the ruleset
+    for i in range(n_output_ruleset-1): #The final index of that ruleset is for mergees
+        for j in range(i+1, n_output_ruleset):
+            ruleset_i = ruleset[i]
+            ruleset_j = ruleset[j]
+            for inp_1, out_1 in ruleset_i:
+                for inp_2, out_2 in ruleset_j:
+                    if inp_1 == inp_2 and not out_1 == out_2:
+                        out_merged = _intersection(out_1, out_2)
+#                        _print_rule(inp_1, out_merged)
+                        if not (inp_1, out_merged) in mergees:
+                            mergees += [(inp_1, out_merged)]
+    ruleset[-1] = mergees
+    return ruleset
+
+def remove_redundancies(ruleset):
+    """Remove redundant rules:
+    If inp_1 == inp_2, but out_1 is subset of out_2, then replace it with inp_1 --> out_1
+    If inp_1 is subset of inp_2 and out_1 is subset of out_2, then replace it with inp_2 --> out_1 (more general to more specific)
+    """
+    print("Removing rules that are already described with other rules")
+    ruleset = copy.deepcopy(ruleset)
+    for inp_1, out_1 in ruleset:
+        for inp_2, out_2 in ruleset:
+            if not (inp_1, out_1) == (inp_2, out_2):
+                if _check_subset(inp_1, inp_2): #Inp 1 is subset of inp 2
+                    if _check_subset(out_1, out_2):
+                        if (inp_1, out_1) in ruleset:
+                            ruleset.remove((inp_1, out_1))
+                        if (inp_2, out_2) in ruleset:
+                            ruleset.remove((inp_2, out_2))
+                        if not (inp_2, out_1) in ruleset:
+                            ruleset += [(inp_2, out_1)]
+                    if _check_subset(out_2, out_1):
+                        if (inp_1, out_1) in ruleset:
+                            ruleset.remove((inp_1, out_1))
+                        if (inp_2, out_2) in ruleset:
+                            ruleset.remove((inp_2, out_2))
+                        if not (inp_2, out_2) in ruleset:
+                            ruleset += [(inp_2, out_2)]
+                if _check_subset(inp_2, inp_1): #inp 2 is subset of inp 1
+                    if _check_subset(out_1, out_2):
+                        if (inp_1, out_1) in ruleset:
+                            ruleset.remove((inp_1, out_1))
+                        if (inp_2, out_2) in ruleset:
+                            ruleset.remove((inp_2, out_2))
+                        if not (inp_1, out_1) in ruleset:
+                            ruleset += [(inp_1, out_1)]
+                    if _check_subset(out_2, out_1):
+                        if (inp_1, out_1) in ruleset:
+                            ruleset.remove((inp_1, out_1))
+                        if (inp_2, out_2) in ruleset:
+                            ruleset.remove((inp_2, out_2))
+                        if not (inp_1, out_2) in ruleset:
+                            ruleset += [(inp_1, out_2)]
+    ruleset.sort(key = lambda x: _count_asterisks(x[0]), reverse = True)
+    return ruleset
+
+def get_nice_general_rules(ruleset):
+    """Given a starting ruleset, extrapolate any ,,nice`` general rules.
+
+    Nice rules are rules that only have one expression in input and output.
+    
+    For two rules to be candidates for being nice, they have to have the same output.
+
+    This means that the rulesets for the same output can only be considered.
+    """
+    print("Generalizing rules")
+    ruleset = copy.deepcopy(ruleset)
+    n_output_ruleset = len(ruleset) #Number of output nodes considered by the ruleset
+    for i in range(n_output_ruleset):
+        considered_ruleset = ruleset[i]
+        n_rules = len(considered_ruleset)
+        for j in range(n_rules):
+            for k in range(j+1, n_rules):
+                inp_1, out_1 = considered_ruleset[j]
+                inp_2, out_2 = considered_ruleset[k]
+                if out_1 == out_2:#Outputs match
+                    is_nice, union = _nice_union(inp_1, inp_2)
+                    if is_nice and not (union, out_1) in considered_ruleset:
+#                        _print_rule(union, out_1)
+                        considered_ruleset += [(union, out_1)]
+    return ruleset
+
+def _nice_union(temp_1, temp_2):
+    """Check if a ,,nice'' union between the two expressions is possible, and perform it if so.
+
+    A ,,nice`` expression is such that it only requires one expression to show, i.e. the new 
+    expression may be doable by replacing a character with an asterisk, thus making it more
+    general, yet applicable to both.
+
+    
+    """
+    if type(temp_1) == type(None) and type(temp_2) == type(None):#If both are empty sets
+        return None #Return the empty set.
+    #If one of the sets is empty, then the union will be the other set.
+    if type(temp_1) == type(None):
+        return temp_2
+    if type(temp_2) == type(None):
+        return temp_1
+    #Both sets here are non-empty then
+    n_elements = len(temp_1)
+    
+    differing_elements = []
+    for i in range(n_elements):
+        s_1 = temp_1[i]
+        s_2 = temp_2[i]
+        if not s_1 == s_2:
+            differing_elements += [(i, s_1, s_2)]
+    if len(differing_elements) == 1:
+        #Only one differing elements there.
+        position, e_1, e_2 = differing_elements[0]
+        if not (e_1 == '*' or e_2 == '*'):#Both are not asterisks
+            output = list(copy.deepcopy(temp_2))
+            output[position] = '*'
+            output = ''.join(output)
+            return True, output
+    return False, None
+
+
+    raise Exception('')
+
+def _print_rule(inp, out):
+    """I've been using this so much I'm writing a seperate function for it.
+    """
+    print("{0} --> {1}".format(inp, out))
+
+def _check_if_universe(states):
+    """Check if union of set of states composes all possible states
+    """
+#    print("_check_if_universe({0})".format(states))
+    n_elements = len(states[0])
+    starting_state = ['*' * n_elements]
+    for f_state in states:
+        s_state_old = starting_state
+        starting_state = _subtract_states(starting_state, [f_state])
+#        print("{0} \ {1} = {2}".format(s_state_old, [f_state], starting_state))
+#        input()
+        if len(starting_state) == 0:
+            return True
+    print("Example reachable states: {0}".format(starting_state))
+    return False
+
+
+
 
 def _check_complement(f_1, f_2):
     n_elements = len(f_1)
@@ -245,135 +464,7 @@ def _check_complement(f_1, f_2):
         return diff_index, True
     return None, False
 
-def _check_related(temp_1, temp_2):
-    n_symbols = len(temp_1)
-    related = True
-    for i in range(n_symbols):
-        e_1 = temp_1[i]
-        e_2 = temp_2[i]
-        if not e_1 == '*' and not e_1 == e_2:
-            related = False
-    return related
-
-def get_att_from_ruleset(ruleset, ruleset_timeless):
-    #print("get_att_from_ruleset")
-#    print(ruleset)
-#    print(ruleset_timeless)
-    states_in_att = []
-    for inp,out in ruleset_timeless:
-        if inp == out:
-            states_in_att +=[inp]
-    states_in_att.sort(key = lambda x: _count_asterisks(x))
-    print("States deemed to be in attractors: {0}".format(states_in_att))
-    #Pair-wise compare and merge.
-    combos = []
-    for a_1 in states_in_att:
-        for a_2 in states_in_att:
-            compatible = _check_compatibility(a_1, a_2)
-            if compatible:
-                product = _merge(a_1, a_2)
-                if not product in combos:
-                    combos += [product]
-    print("combos: {0}".format(combos))
-    attractors = []
-    while len(combos) > 0:
-        s = combos[0]
-#        print(s)
-        condensed_att = _condense_state([s], ruleset)
-        condensed_att = list(dict.fromkeys(condensed_att))
-        print("Got the entire attractor as {0}".format(condensed_att))
-        for c_att in condensed_att:
-            if c_att in combos:
-#                print("removing {0} from states to consider".format(c_att))
-                combos.remove(c_att)
-#        print("Remaining states to consider: {0}".format(states_in_att))
-#        input()
-        attractors += [condensed_att]
-    print("attractors: {0}".format(attractors))
-    n_elements = len(ruleset[0][0])
-    real_attractors = []
-    for a in attractors:
-        valid = True
-        for s in a:
-            if s == '*'*n_elements:
-                valid =False
-        if valid:
-            real_attractors += [a]
-    print("real_attractors: {0}".format(real_attractors))
-    attractors = copy.deepcopy(real_attractors)
-    real_attractors = []
-    for a_1 in attractors: #Find if one of the states here is already in another state
-        is_final = True
-        for a_2 in attractors:
-            if not a_1 == a_2:
-                for s_1 in a_1:
-                    for s_2 in a_2:
-                        if _check_subset(s_2, s_1) and not s_1 == s_2:
-                            print("{0} is subset of {1}".format(s_2, s_1))
-#                            print("or")
-#                            print("{0} is subset of {1}".format(s_1, s_2))
-                            is_final = False
-        if is_final:
-            real_attractors += [a_1]
-    print("realest attractors: {0}".format(real_attractors))
-    if len(real_attractors) == 0:
-        real_attractors = ['*'*n_elements]
-    return real_attractors
-
-def _condense_state(states, ruleset):
-    """Go through ruleset to get all states.
-    Since the states above must be in attractors, the states following them are also in attratcors.
-    """
-#    print("_condense_state")
-#    print(states)
-    #print(ruleset)
-    next_states = []
-    for state in states: #Go through each state here
-        relevant_rules = []
-##        print("Considering state {0}".format(state))
-        rule_found = False
-        for inp, out in ruleset: #Go thgourh all the rules
-            if inp == state: #If there exists a rule for this state
-                rule_found = True
-#                print("Rule found for {0}".format(state))
-#                print("{0} -> {1}".format(inp, out))
-                if not out in states: #If the output of the rule is not considered
-                    #print("Output deemed not to be in states")
-                    s = states + [out]
-                    states = _condense_state(s, ruleset)
-#                    print(states)
-                    next_states += [states]
-                else: #The output of the rule is already considered.
-             #       print("Output is already in states")
-                    states = states
-                    next_states += [states]
-#        print(next_states)
-        if not rule_found:
-            print("Rule for {0} not found in ruleset".format(state))
-            #Need second best?
-            outstate = []
-            for inp, out in ruleset:
-                if _check_subset(state, inp): #If inp applies to state
-                    outstate += [out]
-                    print("{0} -> {1} fits".format(inp, out))
-            print(outstate)
-            resulting_outstate = outstate.pop()
-            while len(outstate) > 0:
-                resulting_outstate = _merge(outstate.pop(), resulting_outstate)
-            #print(resulting_outstate)
-            outstate = resulting_outstate
-            print("Going with {0}".format(outstate))
-            n_elements = len(states[0])
-#            s = states + ['*'*n_elements]
-            s = states + [outstate]
-            #print('*'*n_elements)
-            #input()
-            return s
-            raise Exception('Rule for state {0} not found in ruleset'.format(state))
-
-    return states
-
-def _expand_notation(attractor):
+def expand_notation(attractor):
     #input()
     #print("Calling _expand_notation on {0}".format(attractor))
     first_asterisk = None
@@ -393,56 +484,11 @@ def _expand_notation(attractor):
         att_1[first_asterisk] = '1'
         att_0 = ''.join(att_0)
         att_1 = ''.join(att_1)
-        att_0 = _expand_notation(att_0)
-        att_1 = _expand_notation(att_1)
+        att_0 = expand_notation(att_0)
+        att_1 = expand_notation(att_1)
         #print("{1}: This became a leaf. Returning {0}".format(att_0+ att_1, attractor))
         return att_0+ att_1
 
-def unmap(attractor, mapping):
-    reverse_mapping = _reverse_map(mapping)
-    n_elements = len(attractor)
-    output = ''
-    for i in range(n_elements):
-        output += attractor[mapping[i]]
-    return output
-
-def _reverse_map(mapping):
-    output = {}
-    for key, value in mapping.items():
-        output[value] = key
-    return output
-
-def _merge(temp_1, temp_2):
-    """Merge two compatible sequences
-    """
-#    print(temp_1)
-#    print(temp_2)
-    n_symbols = len(temp_1)
-    merged_temp = ['*']*n_symbols
-    for i in range(n_symbols):
-        s_1 = temp_1[i]
-        s_2 = temp_2[i]
-        if not s_1 == "*":
-            merged_temp[i] = s_1
-        if not s_2 == "*":
-            merged_temp[i] = s_2
-    merged_temp = ''.join(merged_temp)
-#    print(merged_temp)
-#    input()
-    return merged_temp
-
-def _check_compatibility(temp_1, temp_2):
-    """Check if two input sequences could be merged.
-    """
-    compatible = True
-    n_symbols = len(temp_1)
-    for i in range(n_symbols):
-        s_1 = temp_1[i]
-        s_2 = temp_2[i]
-        if not (s_1 == '*' or s_2 == '*'):
-            if not s_1 == s_2:
-                compatible = False
-    return compatible
 
 def expand_att(att):
     output = []
@@ -461,30 +507,3 @@ def expand_att(att):
 #    print("expanded att: {0}".format(output))
     return output
 
-def _unasterisk(state):
-    #print("working {0}".format(state))
-    n_asterisks = _count_asterisks(state)
-    output = []
-    if n_asterisks:
-        first_asterisk_index = _get_first_asterisk(state)
-        state_0 = copy.deepcopy(list(state))
-        state_1 = copy.deepcopy(list(state))
-        state_0[first_asterisk_index] = '0'
-        state_1[first_asterisk_index] = '1'
-        state_0 = ''.join(state_0)
-        state_1 = ''.join(state_1)
-        state_0 = _unasterisk(state_0)
-        state_1 = _unasterisk(state_1)
-        output = state_0 + state_1
-        #print("returning {0}".format(output))
-        return output
-    else:
-        #print("returning {0}".format([state]))
-        return [state]
-
-def _get_first_asterisk(state):
-    n_elements = len(state)
-    for i in range(n_elements):
-        if state[i] == '*':
-            break
-    return i

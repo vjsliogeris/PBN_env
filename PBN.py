@@ -8,6 +8,7 @@ import copy
 import time
 from .Node import Node
 from .utils import *
+import pickle
 
 class PBN():
     def __init__(self, PBN_data = None):
@@ -215,51 +216,74 @@ class PBN():
         all_symbolic_rules = []
         for node in self.nodes:
             symbolic_rules = node.generate_symbolic_rules(list(template))
-            all_symbolic_rules+= symbolic_rules
+            all_symbolic_rules+= [symbolic_rules]
 
-
-#        print()
-#        print(ruleset_old)
-#        print()
-
-        #print(all_symbolic_rules)
-        #raise Exception('')
-        print("===")
-        print("Total ruleset:")
+        print("Original ruleset")
         print(all_symbolic_rules)
-        merged_ruleset = apply_until_exhaustion(all_symbolic_rules, lambda x: merge_symbolic_rules(x))
-        print("Merged ruleset:")
-        print(merged_ruleset)
-        simplified_ruleset = apply_until_exhaustion(merged_ruleset, lambda x: simplify_symbolic_rules(x))
-        print("SIMPlified ruleset:")
-        print(simplified_ruleset)
-        minimal_ruleset = apply_until_exhaustion(simplified_ruleset, lambda x: remove_redundant_rules(x))
-        print("Minimised ruleset")
-        print(minimal_ruleset)
-        for inp_1, out_1 in minimal_ruleset:
-            for inp_2, out_2 in minimal_ruleset:
-                if inp_1 == inp_2 and not out_1 == out_2:
-                    print("{0} -> {1}".format(inp_1, out_1))
-                    print("{0} -> {1}".format(inp_2, out_2))
-                    raise Exception('Duplicate')
-        concrete_ruleset = apply_until_exhaustion(minimal_ruleset, lambda x: concretise_symbolic_ruleset(x))
-        print("Concrete ruleset")
-        print(concrete_ruleset)
-        time_inv_ruleset = apply_until_exhaustion(concrete_ruleset, lambda x: connect_symbolic_ruleset(x))
-        print("Time inv ruleset")
-        print(time_inv_ruleset)
+        flat_ruleset = flatten_ruleset(all_symbolic_rules)
+        print("Flat rules")
+        print(flat_ruleset)
+        input()
+        reached_states = template
+#        reached_states = '0111' #Testing
+#        reached_states = '100*' #Testing
+#        reached_states = '010*' #Testing
+#        reached_states = '0*1*' #Testing
+#        reached_states = '**1*' #Testing
+#        reached_states = '*1**' #Testing
+#        input()
+        reached_states = apply_ruleset(reached_states, flat_ruleset)
+        print("Reached {0}".format(reached_states))
+        loopy_states = []
+        for state in reached_states:
+            loopy_state = find_successors(state, [template], flat_ruleset)
+            if not loopy_state in loopy_states:
+                loopy_states += [loopy_state]
+        print()
+        print("Loopy states: {0}".format(loopy_states))
+        input()
+        attractors = []
+        for loopy_state in loopy_states:
+            print("Loopy state deepening: {0}".format(loopy_state))
+            attractor_states = copy.deepcopy([loopy_state])
+            attractors_old = []
+            while not attractor_states == attractors_old:
+                next_states = []
+                for state in attractor_states:
+                    next_state = apply_ruleset(state, flat_ruleset)
+                    for n_s in next_state:
+                        if not n_s in next_states and not check_subset(n_s, loopy_state):
+                            next_states += [n_s]
+                next_states += [loopy_state]
+                next_states.sort()
+                print(next_states)
+                attractors_old = copy.deepcopy(attractor_states)
+                attractor_states = next_states
+#                input()
+            if not attractor_states in attractors:
+                attractors += [attractor_states]
+        print("Loopy state + successors: {0}".format(attractors))
+        attractors_compact = copy.deepcopy(attractors)
+        attractors = []
+        for attractor_compact in attractors_compact:
+            print("Loopy state + succ: {0}".format(attractor_compact))
+            attractor = []
+            for state_compact in attractor_compact:
+                expanded = expand_notation(state_compact)
+                for s in expanded:
+                    if not s in attractor:
+                        attractor += [s]
+            attractor.sort()
+            if not attractor in attractors:
+                attractors += [attractor]
+                print(attractor)
+        attractors.sort()
 
-        attractors = get_att_from_ruleset(concrete_ruleset, time_inv_ruleset)
-#        print(expand_att(['*0*']))
+        print(attractors)
+        pickle.dump(self, open("last_PBN.pkl","wb"))
 #        raise Exception('')
-        if expand:
-            expanded_att = []
-            for att in attractors:
-                att = expand_att(att)
-                expanded_att += [att]
-            attractors = expanded_att
         return attractors
-
+    
     def generate_weights(self):
         """Compute weights
         """
