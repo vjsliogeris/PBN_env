@@ -83,17 +83,6 @@ class PBN():
             self.PBN = G
         return self.PBN
 
-    def plot_PBN(self, path):
-        #self.generate_weights()
-        G = self.print_PBN()
-        plt.figure(1, figsize = (20,20))
-        pos = nx.spring_layout(G)
-        weights = [G[u][v]['weight'] for u,v in G.edges()]
-        nx.draw(G, pos, node_size = 900, with_labels = True, width = weights)
-#        nx.draw(G, pos, node_size = 900, with_labels = True)
-        plt.savefig(path, dpi=160)
-        plt.clf()
-
     def flip(self, index):
         """Flip the value of a gene at index.
 
@@ -152,16 +141,6 @@ class PBN():
             self.STG = G
         return self.STG
 
-    def plot_STG(self, path):
-        STG = self.gen_STG()
-        plt.figure(1, figsize = (20,20))
-        pos = nx.spring_layout(STG)
-        weights = {(u,v):STG[u][v]['weight'] for u,v in STG.edges()}
-        #nx.draw(G, pos, node_size = 900, with_labels = True, width = weights)
-        nx.draw(STG, pos, node_size = 900, with_labels = True)
-        nx.draw_networkx_edge_labels(STG,pos,edge_labels = weights)
-        plt.savefig(path, dpi=160)
-        plt.clf()
 
     def get_node_by_name(self, nodename):
         """Get the appropriate node object given the name of the node.
@@ -171,44 +150,10 @@ class PBN():
                 return node
         raise Exception(f'Node with name \'{nodename}\' not found.')
 
-    def get_output_nodes(self, node_obj):
-        """Get all the nodes that take node_obj as input.
-        May deal poorly if there are duplicate names.
-        NOTE: UNTESTED
-        """
-        output_nodes = []
-        for node in self.nodes:
-            inputs = [n.name for n in self.nodes[node.mask]]
-            if node_obj.name in inputs:
-                output_nodes += [node]
-        return output_nodes
-
-    def get_subPBN(self, nodes):
-        """Get the subgraph of the PBN which includes the given nodes.
-        """
-        sub_PBN = PBN()
-        PBN_nodes = []
-        for node in nodes:
-            node_object = self.get_node_by_name(node)
-            PBN_nodes += [node_object]
-
-        sub_PBN.nodes = PBN_nodes
-        sub_PBN.resolved = False
-        sub_PBN.PBN_size = len(PBN_nodes)
-        return sub_PBN
-
-    def all_parents_resolved(self):
-        """Go through all parents, check if they are resolved
-        """
-        all_resolved = True
-        for parent in self.parent_SG:
-            if not parent.resolved:
-                all_resolved = False
-        return all_resolved
-
 
     def compute_attractors(self, expand = False):
         """Compute attractors without explicitly computing STG.
+        WIP
         """
         template = '*'*self.PBN_size #Generate rule template.
 
