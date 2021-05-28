@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import copy
 import time
 from .Node import Node
-from .utils import *
 
 class PBN():
     def __init__(self, PBN_data = None):
@@ -150,60 +149,6 @@ class PBN():
                 return node
         raise Exception(f'Node with name \'{nodename}\' not found.')
 
-
-    def compute_attractors(self, expand = False):
-        """Compute attractors without explicitly computing STG.
-        WIP
-        """
-        template = '*'*self.PBN_size #Generate rule template.
-
-        all_symbolic_rules = []
-        for node in self.nodes:
-            symbolic_rules = node.generate_symbolic_rules(list(template))
-            all_symbolic_rules+= symbolic_rules
-
-
-#        print()
-#        print(ruleset_old)
-#        print()
-
-        #print(all_symbolic_rules)
-        #raise Exception('')
-        print("===")
-        print("Total ruleset:")
-        print(all_symbolic_rules)
-        merged_ruleset = apply_until_exhaustion(all_symbolic_rules, lambda x: merge_symbolic_rules(x))
-        print("Merged ruleset:")
-        print(merged_ruleset)
-        simplified_ruleset = apply_until_exhaustion(merged_ruleset, lambda x: simplify_symbolic_rules(x))
-        print("SIMPlified ruleset:")
-        print(simplified_ruleset)
-        minimal_ruleset = apply_until_exhaustion(simplified_ruleset, lambda x: remove_redundant_rules(x))
-        print("Minimised ruleset")
-        print(minimal_ruleset)
-        for inp_1, out_1 in minimal_ruleset:
-            for inp_2, out_2 in minimal_ruleset:
-                if inp_1 == inp_2 and not out_1 == out_2:
-                    print("{0} -> {1}".format(inp_1, out_1))
-                    print("{0} -> {1}".format(inp_2, out_2))
-                    raise Exception('Duplicate')
-        concrete_ruleset = apply_until_exhaustion(minimal_ruleset, lambda x: concretise_symbolic_ruleset(x))
-        print("Concrete ruleset")
-        print(concrete_ruleset)
-        time_inv_ruleset = apply_until_exhaustion(concrete_ruleset, lambda x: connect_symbolic_ruleset(x))
-        print("Time inv ruleset")
-        print(time_inv_ruleset)
-
-        attractors = get_att_from_ruleset(concrete_ruleset, time_inv_ruleset)
-#        print(expand_att(['*0*']))
-#        raise Exception('')
-        if expand:
-            expanded_att = []
-            for att in attractors:
-                att = expand_att(att)
-                expanded_att += [att]
-            attractors = expanded_att
-        return attractors
 
     def generate_weights(self):
         """Compute weights
